@@ -1,0 +1,49 @@
+services:
+  redis:
+    image: redis:alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:13
+    container_name: postgres_db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+
+  web:
+    build: .
+    container_name: django_app
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/usr/src/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+      - db
+
+  celery_worker:
+    build: 
+      context: .
+      dockerfile: ./celery_worker/Dockerfile 
+    container_name: celery_worker
+    command: celery -A price_scraper worker --loglevel=info
+    volumes:
+      - .:/usr/src/app
+    depends_on:
+      - redis
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: ./celery_beat/Dockerfile
+    command: celery -A price_scraper beat --loglevel=info
+    volumes:
+      - .:/usr/src/app
+    depends_on:
+      - redis

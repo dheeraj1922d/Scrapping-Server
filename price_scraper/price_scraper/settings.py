@@ -25,22 +25,19 @@ SECRET_KEY = "django-insecure-*jd=!a$p#wzsx72*4ltg+%4#byxg89t_mafhrjtpc##9c9b3a&
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['localhost' , '127.0.0.1']
 
 
-from celery.schedules import crontab
+# Celery settings
+# Redis URL
+REDIS_URL = 'redis://redis:6379/0'
 
-# Redis & Celery settings
-CELERY_BROKER_URL = 'redis://localhost:6379/0'
-CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+# Celery Configuration
+CELERY_BROKER_URL = REDIS_URL  # Redis will act as the broker
+CELERY_RESULT_BACKEND = REDIS_URL  # Redis will store task results
 
-# For periodic task scheduling
-CELERY_BEAT_SCHEDULE = {
-    'scrape-every-hour': {
-        'task': 'scraper.tasks.scrape_low_priority_jobs',
-        'schedule': crontab(minute=0, hour='*'),  # every hour
-    },
-}
+# this allows you to schedule items in the Django admin.
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers.DatabaseScheduler'
 
 # Application definition
 
@@ -51,8 +48,10 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
-    "scraper",
-    "django_celery_beat",  # for scheduling tasks
+    "rest_framework",
+    "price_scraper",
+    'django_celery_beat',
+    'django_celery_results',
 ]
 
 MIDDLEWARE = [
@@ -90,12 +89,15 @@ WSGI_APPLICATION = "price_scraper.wsgi.application"
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": BASE_DIR / "db.sqlite3",
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': 'productHistory',
+        'USER': 'postgres',
+        'PASSWORD': 'prEzyiIwATKrfDfJOGXaauDgeHTWjqJa',
+        'HOST': 'postgres_db',
+        'PORT': 5432,
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.1/ref/settings/#auth-password-validators

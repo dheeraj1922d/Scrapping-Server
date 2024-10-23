@@ -2,16 +2,17 @@ import asyncio
 import aiohttp
 from concurrent.futures import ThreadPoolExecutor
 from celery import Celery
-from scrapers.amazon_scraper import AmazonScraper
-from scrapers.flipkart_scraper import FlipkartScraper
-from services.storage_service import StorageService
-from config import HIGH_PRIORITY_QUEUE, LOW_PRIORITY_QUEUE
+import concurrent
+from price_scraper.scrapers.amazon_scraper import AmazonScraper
+from price_scraper.scrapers.flipkart_scraper import FlipkartScraper
+from price_scraper.services.storage_service import StorageService
+from  price_scraper.config.config import HIGH_PRIORITY_QUEUE, LOW_PRIORITY_QUEUE
 
 # Celery setup for the high-priority job
 app = Celery('user_triggered_scrape', broker=HIGH_PRIORITY_QUEUE)
 
 # Thread pool for running blocking scraping tasks
-executor = ThreadPoolExecutor(max_workers=10)
+executor = ThreadPoolExecutor(max_workers=5)
 
 # StorageService handles cache and DB interactions
 storage_service = StorageService()
