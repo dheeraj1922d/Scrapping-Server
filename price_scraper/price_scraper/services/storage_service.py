@@ -4,7 +4,7 @@ from price_scraper.models import PriceHistory
 
 class StorageService:
     def __init__(self):
-        self.redis_conn = redis.Redis(host='127.0.0.1', port=6379, db=0)
+        self.redis_conn = redis.Redis(host=redis, port=6379, db=1)
 
     def store_async(self, product_name, source, price):
         """

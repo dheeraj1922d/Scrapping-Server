@@ -94,7 +94,7 @@ DATABASES = {
         'NAME': 'productHistory',
         'USER': 'postgres',
         'PASSWORD': 'prEzyiIwATKrfDfJOGXaauDgeHTWjqJa',
-        'HOST': 'postgres_db',
+        'HOST': 'db',
         'PORT': 5432,
     }
 }
