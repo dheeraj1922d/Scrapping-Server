@@ -1,24 +1,24 @@
 import asyncio
 import aiohttp
-from concurrent.futures import ThreadPoolExecutor
+import logging
 from celery import Celery
-import concurrent
 from price_scraper.scrapers.amazon_scraper import AmazonScraper
 from price_scraper.scrapers.flipkart_scraper import FlipkartScraper
 from price_scraper.services.storage_service import StorageService
-from  price_scraper.config.config import HIGH_PRIORITY_QUEUE, LOW_PRIORITY_QUEUE
+from price_scraper.config.config import HIGH_PRIORITY_QUEUE, LOW_PRIORITY_QUEUE
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Celery setup for the high-priority job
-app = Celery('user_triggered_scrape', broker=HIGH_PRIORITY_QUEUE)
-
-# Thread pool for running blocking scraping tasks
-executor = ThreadPoolExecutor(max_workers=5)
+app = Celery('user_triggered_scrape' )
 
 # StorageService handles cache and DB interactions
 storage_service = StorageService()
 
 @app.task
-def user_triggered_scrape(product_data):
+async def user_triggered_scrape(product_data):
     """
     This function handles user-triggered scraping when the user requests product data.
     It scrapes the price from multiple websites, sends it to the user via a callback,
@@ -33,16 +33,17 @@ def user_triggered_scrape(product_data):
     amazon_scraper = AmazonScraper()
     flipkart_scraper = FlipkartScraper()
 
-    # Scrape data using a thread pool
-    with ThreadPoolExecutor() as executor:
-        futures = []
-        if flipkart_url:
-            futures.append(executor.submit(scrape_and_update, flipkart_scraper, flipkart_url, product_name, 'Flipkart'))
-        if amazon_url:
-            futures.append(executor.submit(scrape_and_update, amazon_scraper, amazon_url, product_name, 'Amazon'))
+    logger.info(f"Scraping product: {product_name}")
 
-        # Wait for scraping tasks to finish
-        concurrent.futures.wait(futures)
+    # Scrape data using async functions
+    tasks = []
+    if flipkart_url:
+        tasks.append(scrape_and_update(flipkart_scraper, flipkart_url, product_name, 'Flipkart'))
+    if amazon_url:
+        tasks.append(scrape_and_update(amazon_scraper, amazon_url, product_name, 'Amazon'))
+
+    # Await for all scraping tasks to finish
+    await asyncio.gather(*tasks)
 
     # Once scraping is done, send the scraped data back to the user immediately
     if user_callback_url:
@@ -51,26 +52,25 @@ def user_triggered_scrape(product_data):
             "flipkart_price": storage_service.get_from_cache(product_name, 'Flipkart'),
             "amazon_price": storage_service.get_from_cache(product_name, 'Amazon')
         }
-        asyncio.run(send_result_to_user(user_callback_url, result))
+        await send_result_to_user(user_callback_url, result)
 
     # Transfer the job to the low-priority queue after sending the data
     transfer_to_low_priority(product_data)
 
-def scrape_and_update(scraper, url, product_name, source):
+async def scrape_and_update(scraper, url, product_name, source):
     """
-    Scrapes the price and updates cache and database.
+    Scrapes the price and updates cache and database asynchronously.
     """
-    price = scraper.get_price(url)
-    if price:
-        # Update cache and DB asynchronously
-        storage_service.store_sync(product_name, source, price)
-
-def transfer_to_low_priority(product_data):
-    """
-    Transfers the job to the low-priority queue after the user-triggered scrape.
-    """
-    low_priority_app = Celery('low_priority_queue', broker=LOW_PRIORITY_QUEUE)
-    low_priority_app.send_task('auto_triggered_scrape', args=[product_data])
+    try:
+        price = await scraper.get_price(url)
+        if price:
+            # Update cache and DB asynchronously
+            await storage_service.store_async(product_name, source, price)
+            logger.info(f"Updated price for {product_name} from {source}: {price}")
+        else:
+            logger.warning(f"No price found for {product_name} on {source}.")
+    except Exception as e:
+        logger.error(f"Error scraping {source} for {product_name}: {e}")
 
 async def send_result_to_user(callback_url, result):
     """
@@ -80,9 +80,15 @@ async def send_result_to_user(callback_url, result):
         try:
             async with session.post(callback_url, json=result) as response:
                 if response.status == 200:
-                    print(f"Result sent to {callback_url} successfully.")
+                    logger.info(f"Result sent to {callback_url} successfully.")
                 else:
-                    print(f"Failed to send result to {callback_url}. Status code: {response.status}")
+                    logger.error(f"Failed to send result to {callback_url}. Status code: {response.status}")
         except Exception as e:
-            print(f"Error sending result to the user: {e}")
-   
+            logger.error(f"Error sending result to the user: {e}")
+
+def transfer_to_low_priority(product_data):
+    """
+    Transfers the job to the low-priority queue after the user-triggered scrape.
+    """
+    low_priority_app = Celery('low_priority_queue', broker=LOW_PRIORITY_QUEUE)
+    low_priority_app.send_task('price_scraper.tasks.auto_triggered_scrape', args=[product_data])

@@ -1,18 +1,19 @@
 from kombu import Queue
 from celery.schedules import crontab
+from price_scraper.settings import REDIS_URL
 
 # Queue Names
-HIGH_PRIORITY_QUEUE = "high_priority_jobs"
-LOW_PRIORITY_QUEUE = "low_priority_jobs"
+HIGH_PRIORITY_QUEUE = REDIS_URL
+LOW_PRIORITY_QUEUE = REDIS_URL
 
 # Celery Configuration for Queues
-CELERY_QUEUES = (
+QUEUES = (
     Queue(HIGH_PRIORITY_QUEUE, routing_key='high_priority.#'),  # High-priority queue
     Queue(LOW_PRIORITY_QUEUE, routing_key='low_priority.#'),    # Low-priority queue
 )
 
 # Default routing settings
-CELERY_ROUTES = {
+ROUTES = {
     'price_scraper.tasks.user_triggered_scrape': {'queue': HIGH_PRIORITY_QUEUE, 'routing_key': 'high_priority.user_triggered'},
     'price_scraper.tasks.auto_triggered_scrape': {'queue': LOW_PRIORITY_QUEUE, 'routing_key': 'low_priority.auto_triggered'},
 }

@@ -14,8 +14,10 @@ def trigger_scraping(request):
         "callback_url": request.GET.get('callback_url')
     }
     
+    if not product_data['product_name'] or not product_data['amazon_url'] or not product_data['flipkart_url'] or not product_data['callback_url']:
+        return Response({"message": "Please provide all required fields."})
+    
     # Trigger user-triggered scraping task
     user_triggered_scrape.delay(product_data)  # .delay sends the task to the queue
     
     return Response({"message": "Scraping triggered successfully."})
- 

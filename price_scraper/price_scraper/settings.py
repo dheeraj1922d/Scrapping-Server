@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,12 +26,12 @@ SECRET_KEY = "django-insecure-*jd=!a$p#wzsx72*4ltg+%4#byxg89t_mafhrjtpc##9c9b3a&
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost' , '127.0.0.1']
+ALLOWED_HOSTS = []
 
 
 # Celery settings
 # Redis URL
-REDIS_URL = 'redis://redis:6379/0'
+REDIS_URL = 'redis://redis:6379/1' #for celery
 
 # Celery Configuration
 CELERY_BROKER_URL = REDIS_URL  # Redis will act as the broker
@@ -91,11 +92,22 @@ WSGI_APPLICATION = "price_scraper.wsgi.application"
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'productHistory',
-        'USER': 'postgres',
-        'PASSWORD': 'prEzyiIwATKrfDfJOGXaauDgeHTWjqJa',
+        'NAME': os.environ.get('POSTGRES_DB'),
+        'USER': os.environ.get('POSTGRES_USER'),
+        'PASSWORD': os.environ.get('POSTGRES_PASSWORD'),
         'HOST': 'db',
         'PORT': 5432,
+    }
+}
+
+CACHE_URL = 'redis://redis:6379/0' #FOR CACHE
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": CACHE_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
     }
 }
 
