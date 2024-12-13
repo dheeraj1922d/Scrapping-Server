@@ -1,94 +1,89 @@
-import asyncio
-import aiohttp
-import logging
-from celery import Celery
 from price_scraper.scrapers.amazon_scraper import AmazonScraper
 from price_scraper.scrapers.flipkart_scraper import FlipkartScraper
 from price_scraper.services.storage_service import StorageService
+from price_scraper.tasks.auto_scrape import scrape_low_priority_jobs
 from price_scraper.config.config import HIGH_PRIORITY_QUEUE, LOW_PRIORITY_QUEUE
+from redis import Redis
+import json
+import requests
+from price_scraper.celery import app
 
-# Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Celery setup for the high-priority job
-app = Celery('user_triggered_scrape' )
+redis_conn = Redis(host='redis', port=6379, db=1)
 
 # StorageService handles cache and DB interactions
 storage_service = StorageService()
 
-@app.task
-async def user_triggered_scrape(product_data):
+
+@app.task(queue=HIGH_PRIORITY_QUEUE, routing_key='high_priority.user_triggered_scrape')
+def user_triggered_scrape(product_data):
     """
-    This function handles user-triggered scraping when the user requests product data.
-    It scrapes the price from multiple websites, sends it to the user via a callback,
-    and then updates the cache and database before transferring the job to the low-priority queue.
+    Synchronous Celery task for user-triggered scraping.
     """
+
     product_name = product_data['product_name']
     flipkart_url = product_data.get('flipkart_url')
     amazon_url = product_data.get('amazon_url')
     user_callback_url = product_data.get('callback_url')  # URL to send the result back to
 
-    # Scraping data from different sources concurrently
-    amazon_scraper = AmazonScraper()
-    flipkart_scraper = FlipkartScraper()
+    print(f"Started scraping for product: {product_name}")
 
-    logger.info(f"Scraping product: {product_name}")
-
-    # Scrape data using async functions
-    tasks = []
-    if flipkart_url:
-        tasks.append(scrape_and_update(flipkart_scraper, flipkart_url, product_name, 'Flipkart'))
+    # Scrape from Amazon and Flipkart
+    scraped_data = {}
     if amazon_url:
-        tasks.append(scrape_and_update(amazon_scraper, amazon_url, product_name, 'Amazon'))
+        scraped_data['amazon_price'] = scrape_and_update(AmazonScraper(), amazon_url, product_name, 'Amazon')
+    if flipkart_url:
+        scraped_data['flipkart_price'] = scrape_and_update(FlipkartScraper(), flipkart_url, product_name, 'Flipkart')
 
-    # Await for all scraping tasks to finish
-    await asyncio.gather(*tasks)
-
-    # Once scraping is done, send the scraped data back to the user immediately
+    # Send results back to the user
     if user_callback_url:
-        result = {
+        send_result_to_user(user_callback_url, {
             "product_name": product_name,
-            "flipkart_price": storage_service.get_from_cache(product_name, 'Flipkart'),
-            "amazon_price": storage_service.get_from_cache(product_name, 'Amazon')
-        }
-        await send_result_to_user(user_callback_url, result)
+            "amazon_price": scraped_data.get('amazon_price'),
+            "flipkart_price": scraped_data.get('flipkart_price'),
+        })
 
-    # Transfer the job to the low-priority queue after sending the data
+    # Transfer the job to the low-priority queue
     transfer_to_low_priority(product_data)
 
-async def scrape_and_update(scraper, url, product_name, source):
+
+def scrape_and_update(scraper, url, product_name, source):
     """
-    Scrapes the price and updates cache and database asynchronously.
+    Scrapes the price and updates cache and database.
     """
     try:
-        price = await scraper.get_price(url)
+        price = scraper.get_price(url)
         if price:
-            # Update cache and DB asynchronously
-            await storage_service.store_async(product_name, source, price)
-            logger.info(f"Updated price for {product_name} from {source}: {price}")
+            # Update cache and database
+            storage_service.store(product_name, source, price)
+            print(f"{source}: Price updated to {price} for {product_name}")
+            return price
         else:
-            logger.warning(f"No price found for {product_name} on {source}.")
+            print(f"{source}: No price found for {product_name}")
+            return None
     except Exception as e:
-        logger.error(f"Error scraping {source} for {product_name}: {e}")
+        print(f"Error scraping {source} for {product_name}: {e}")
+        return None
 
-async def send_result_to_user(callback_url, result):
+
+def send_result_to_user(callback_url, result):
     """
-    Asynchronously sends the scraping result back to the user.
+    Sends the scraping result back to the user synchronously.
     """
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(callback_url, json=result) as response:
-                if response.status == 200:
-                    logger.info(f"Result sent to {callback_url} successfully.")
-                else:
-                    logger.error(f"Failed to send result to {callback_url}. Status code: {response.status}")
-        except Exception as e:
-            logger.error(f"Error sending result to the user: {e}")
+    try:
+        response = requests.post(callback_url, json=result)
+        if response.status_code == 200:
+            print(f"Result sent to {callback_url}")
+        else:
+            print(f"Failed to send result to {callback_url}, Status Code: {response.status_code}")
+    except Exception as e:
+        print(f"Error sending result to {callback_url}: {e}")
+
 
 def transfer_to_low_priority(product_data):
     """
     Transfers the job to the low-priority queue after the user-triggered scrape.
     """
-    low_priority_app = Celery('low_priority_queue', broker=LOW_PRIORITY_QUEUE)
-    low_priority_app.send_task('price_scraper.tasks.auto_triggered_scrape', args=[product_data])
+
+    print(f"Product data after json: " , product_data)
+    redis_conn.rpush(LOW_PRIORITY_QUEUE, product_data)
+    print("Transferred to low-priority queue")

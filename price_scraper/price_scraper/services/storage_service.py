@@ -1,6 +1,6 @@
 import redis
 from django.utils import timezone
-from price_scraper.models import PriceHistory
+from price_scraper.models import PriceHistory , Product , PriceSource
 
 class StorageService:
     def __init__(self):
@@ -9,7 +9,7 @@ class StorageService:
         except redis.exceptions.ConnectionError:
             self.redis_conn = None
 
-    def store_async(self, product_name, source, price):
+    def store(self, product_name, source, price):
         """
         Store the product price in both Redis (cache) and the relational database (history).
         """
@@ -28,9 +28,18 @@ class StorageService:
         """
         Store the product price in the relational database (history).
         """
+
+        # Ensure Product exists or create it
+        product, creatad = Product.objects.get_or_create(name=product_name)
+
+
+        # Ensure PriceSource exists or create it
+        price_source, created = PriceSource.objects.get_or_create(name=source)
+
+        # Create a new PriceHistory record
         PriceHistory.objects.create(
-            product_name=product_name,
+            product=product,
+            source=price_source,
             price=price,
-            source=source,
-            timestamp=timezone.now()
+            timestamp=timezone.now()  # Store the current timestamp
         )

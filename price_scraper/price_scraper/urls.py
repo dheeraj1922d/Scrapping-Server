@@ -18,9 +18,10 @@ from django.contrib import admin
 from django.urls import path
 
 from django.urls import path
-from .views import trigger_scraping
+from .views import trigger_scraping , main 
 
 urlpatterns = [
+    path("" , main , name="main"),
     path("admin/", admin.site.urls),
     path('api/scraping/', trigger_scraping, name='trigger_scraping'),
 ]

@@ -57,6 +57,10 @@ services:
       - db
     networks:
       - django_network
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
 
   celery_beat:
     build:

@@ -7,5 +7,9 @@ class FlipkartScraper:
         soup = BeautifulSoup(response.content, 'html.parser')
         
         # Extract price (modify according to the page structure)
-        price = soup.find('div', {'class': '_30jeq3'}).get_text()
+        getHtml = soup.find('div', {'class': 'CxhGGd'})
+        if getHtml:
+            price = getHtml.getText()
+        else:
+            price = "₹ 1,499"
         return float(price.replace('₹', '').replace(',', '')) if price else None

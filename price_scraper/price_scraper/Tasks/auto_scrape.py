@@ -1,32 +1,26 @@
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
-from celery import Celery
+import json
 from redis import Redis
-from scrapers.amazon_scraper import AmazonScraper
-from scrapers.flipkart_scraper import FlipkartScraper
-from services.storage_service import StorageService
+from price_scraper.scrapers.amazon_scraper import AmazonScraper  # Assume this is now async
+from price_scraper.scrapers.flipkart_scraper import FlipkartScraper  # Assume this is now async
+from price_scraper.services.storage_service import StorageService
 from price_scraper.config.config import LOW_PRIORITY_QUEUE
+from price_scraper.celery import app
 
 # Setup Redis connection
-redis_conn = Redis(host='redis', port=6379, db=0)
+redis_conn = Redis(host='redis', port=6379, db=1)
 
-# Celery setup for scheduling the low-priority scraping jobs
-app = Celery('auto_triggered_scrap', broker=LOW_PRIORITY_QUEUE)
-
-# Thread pool for running blocking tasks like scraping
-executor = ThreadPoolExecutor(max_workers=10)
 
 @app.task
-def scrape_low_priority_jobs():
+async def scrape_low_priority_jobs():
     """
     Celery task that is triggered every hour to scrape products from the low-priority queue.
     """
-    jobs_data_list = get_low_priority_jobs_from_redis()
+    jobs_data_list = await get_low_priority_jobs_from_redis()
     if jobs_data_list:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(scrape_multiple_jobs(jobs_data_list))
+        await scrape_multiple_jobs(jobs_data_list)
 
-def get_low_priority_jobs_from_redis():
+async def get_low_priority_jobs_from_redis():
     """
     Fetches jobs from the low-priority Redis queue.
     Returns a list of jobs (product data) to be processed.
@@ -37,6 +31,8 @@ def get_low_priority_jobs_from_redis():
         job_data = redis_conn.lpop(LOW_PRIORITY_QUEUE)
         if not job_data:
             break
+        # Deserialize the job data from bytes to dict (assuming JSON format)
+        job_data = json.loads(job_data.decode('utf-8'))
         jobs_data_list.append(job_data)
 
     return jobs_data_list
@@ -79,12 +75,13 @@ async def scrape_and_store_price(scraper, url, product_name, source, storage_ser
     """
     Scrapes the price and stores it in cache and database.
     """
-    loop = asyncio.get_event_loop()
-    
-    # Use thread executor to run the blocking scraping operation
-    price = await loop.run_in_executor(executor, scraper.get_price, url)
-    
-    if price:
-        # If price is valid, update cache and database
-        await storage_service.store_async(product_name, source, price)
-
+    try:
+        price = scraper.get_price(url)  # Assuming get_price is now async
+        
+        if price:
+            # If price is valid, update cache and database
+            storage_service.store(product_name, source, price)
+        else:
+            print(f"Failed to scrape price for {product_name} from {source}")
+    except Exception as e:
+        print(f"Error scraping {product_name} from {source}: {str(e)}")
